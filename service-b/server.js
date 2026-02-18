@@ -11,47 +11,45 @@ const consulClient = new consul({ host: 'localhost', port: 8501 });
 
 consulClient.agent.service.register({
   name: 'service-b',  
-  address: '192.168.1.68', // Your Windows IP for other services to reach you
+  address: '192.168.1.68',
   port: PORT,        
   check: {
-    http: `http://172.20.160.1:${PORT}/health`, // ✅ WSL can reach Windows here
+    http: `http://172.20.160.1:${PORT}/health`,
     interval: '10s',
     timeout: '5s'
   }
 });
 
+const profile = process.env.npm_config_configuration || 'local';
 let config = { message: "Default message" };
 
-axios.get('http://localhost:8888/service-b/default')
-  .then(response => {
-    config = response.data;
-    console.log('Service B got config:', config);
-    
-    // axios.post('http://localhost:8761/apps/service-b', {})
-    //   .then(() => console.log('Service B registered with Discovery'))
-    //   .catch(err => console.log('Discovery registration failed:', err.message));
-  })
-  .catch(err => {
-    console.log('Config server not reachable');
-  });
+async function loadConfig() {
+  try {
+    const response = await axios.get(`http://localhost:8888/config/${profile}`);
+    const configObj = eval('(' + response.data + ')');
+    config = { ...config, ...configObj };
+    console.log(`Loaded config for profile: ${profile}`, config);
+  } catch (err) {
+    console.log('Config server not reachable, using defaults');
+  }
+}
+
+loadConfig();
 
 app.get('/time', (req, res) => {
-  const message = config.message;
-  res.send(`${message} - Current time: ${new Date().toLocaleTimeString()}`);
+  res.send(`${config.message} - Current time: ${new Date().toLocaleTimeString()}`);
 });
 
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'UP',
-    service: 'service-a',
+    service: 'service-b',
     timestamp: new Date(),
-    checks: {
-      database: 'connected',
-      config: config ? 'loaded' : 'default'
-    }
+    profile: profile,
+    config: config
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Service B running on port ${PORT}`);
+  console.log(`Service B running on port ${PORT} with profile: ${profile}`);
 });

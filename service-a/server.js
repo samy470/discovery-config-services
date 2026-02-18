@@ -11,31 +11,39 @@ const consulClient = new consul({ host: 'localhost', port: 8501 });
 
 consulClient.agent.service.register({
   name: 'service-a',  
-  address: '192.168.1.68', // Your Windows IP for other services to reach you
+  address: '192.168.1.68', 
   port: PORT,        
   check: {
-    http: `http://172.20.160.1:${PORT}/health`, // ✅ WSL can reach Windows here
+    http: `http://172.20.160.1:${PORT}/health`,
     interval: '10s',
     timeout: '5s'
   }
 });
 
+const profile = process.env.npm_config_configuration || 'local';
 let config = { message: "Default message" };
 
-axios.get('http://localhost:8888/service-a/default')
-  .then(response => {
-    config = response.data;
-    console.log('Got config:', config);
+async function loadConfig() {
+  try {
+    const response = await axios.get(`http://172.20.160.1:8888/config/${profile}`);
+    const configObj = response.data;
+    config = { ...config, ...configObj };
+    console.log(`Loaded config for profile: ${profile}`, config);
+    console.log('Config loaded:', config);
+console.log('Message is:', config.message);
+console.log('Profile used:', profile);
     
-    // axios.post('http://localhost:8761/apps/service-a', {})
-    //   .then(() => console.log('Registered with Discovery'))
-    //   .catch(err => console.log('Discovery registration failed (but continuing):', err.message));
-  })
-  .catch(err => {
-    console.log('Config server not reachable, using defaults');
-  });
+  } catch (err) {
+    console.log('Config loaded:', config);
+console.log('Message is:', config.message);
+console.log('Profile used:', profile);
+  }
+}
+
+loadConfig();
 
 app.get('/hello', (req, res) => {
+  console.log(`hello called, returning: "${config.message}"`);
   res.send(config.message);
 });
 
@@ -44,13 +52,11 @@ app.get('/health', (req, res) => {
     status: 'UP',
     service: 'service-a',
     timestamp: new Date(),
-    checks: {
-      database: 'connected',
-      config: config ? 'loaded' : 'default'
-    }
+    profile: profile,
+    config: config
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Service A running on port ${PORT}`);
+  console.log(`Service A running on port ${PORT} with profile: ${profile}`);
 });
